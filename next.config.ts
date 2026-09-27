@@ -1,5 +1,9 @@
 import path from "node:path";
+import withBundleAnalyzer from "@next/bundle-analyzer";
+import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+import { ALLOWED_CAMPAIGN_IMAGE_HOSTS } from "./src/lib/campaignMedia";
+import { getThirdPartyScriptOrigins } from "./src/lib/thirdParty";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const withAnalyzer = withBundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
@@ -81,7 +85,9 @@ const nextConfig: NextConfig = {
     // receive CORS headers, so browsers will block cross-origin reads.
     const allowedOrigins = [
       "https://proofofheart.xyz", // production
-      ...(process.env.NODE_ENV === "development" ? ["http://localhost:3000", "http://127.0.0.1:3000"] : []),
+      ...(process.env.NODE_ENV === "development"
+        ? ["http://localhost:3000", "http://127.0.0.1:3000"]
+        : []),
     ];
 
     const CSP_DIRECTIVES = [
