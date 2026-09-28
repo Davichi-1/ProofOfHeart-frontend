@@ -42,6 +42,13 @@ Notes:
 - `CREATOR_EMAIL_WEBHOOK_URL` is optional and used only for off-chain creator email opt-in events (server-side only, read by `/api/email-opt-in`).
 - Never commit `.env.local`.
 
+The full contract — every variable, the shape its value must have, and the rules that
+span more than one variable — is in
+[docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md). The environment is
+validated on server boot: an unusable configuration stops a production server, and is
+only logged in development so a work-in-progress `.env.local` never breaks your dev
+server. Set `SKIP_ENV_VALIDATION=true` to bypass the check.
+
 ## 3) Development Commands
 
 ### Start dev server
@@ -261,13 +268,46 @@ Before opening a PR:
 - [ ] Branch is up to date with `main`
 - [ ] PR title follows Conventional Commits format
 - [ ] All commits follow Conventional Commits format
+- [ ] A changeset exists (`npm run changeset`), unless the PR is labelled `skip-changeset`
 - [ ] `npm run lint` passes
 - [ ] `npm run format:check` passes
 - [ ] `npm run typecheck` passes
 - [ ] Relevant tests pass (`npm test` and/or `npm run test:e2e`)
+- [ ] `npm run audit:ci` passes after any dependency change
 - [ ] New behavior is documented (README/docs) when needed
 - [ ] PR description explains what changed, why, and how it was tested
 - [ ] Screenshots/GIFs included for UI changes
+
+### Changesets
+
+Release notes come from [changesets](https://github.com/changesets/changesets), so
+a PR that is not represented in `.changeset/` will not appear in the changelog:
+
+```bash
+npm run changeset        # interactive
+npm run changeset:check  # validate what is pending
+```
+
+`npm run changeset:check` runs in CI on every pull request. It installs nothing and
+takes under a second, so it gives immediate feedback. It also verifies that
+`.changeset/config.json` will actually version this package — the package is
+`private: true`, and changesets skips private packages by default, so a missing
+`privatePackages` setting would silently produce an empty changelog.
+
+Changes that should not be released (docs, tests, CI plumbing) take the
+`skip-changeset` label. See [docs/CI_WORKFLOWS.md](docs/CI_WORKFLOWS.md).
+
+### Dependency changes
+
+```bash
+npm run audit:ci                    # the gate CI runs
+node scripts/check-audit-policy.mjs # allowlist expiry + overrides parity
+```
+
+Security pins live in the `overrides` block of **both** `package.json` and
+`pnpm-workspace.yaml`; the two must stay identical, and
+`node scripts/check-audit-policy.mjs` fails if they drift. See
+[docs/DEPENDENCY_SECURITY.md](docs/DEPENDENCY_SECURITY.md).
 
 ### Validation
 
