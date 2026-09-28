@@ -283,6 +283,7 @@
     "noCausesFound": "No se encontraron causas. Intenta ajustar los filtros o explora todas las causas.",
     "noSearchResults": "No hay resultados de búsqueda",
     "beFirstToSubmit": "Sé el primero en enviar una causa para que la comunidad vote.",
+    "submit": "Crear Causa",
     "tryDifferentKeyword": "Intenta con otra palabra clave o borra los filtros.",
     "tryDifferentSearch": "Intenta con otros términos de búsqueda o borra los filtros para ver todas las causas.",
     "tryAgain": "Intentar de nuevo",
@@ -327,6 +328,7 @@
     "cancel": "Cancelar",
     "submit": "Crear Causa",
     "launchCampaign": "Lanzar Campaña",
+    "createCause": "Lanzar Campaña",
     "reviewTitle": "Revisar Campaña Antes de Firmar",
     "reviewSubtitle": "El lanzamiento es irreversible en la cadena. Confirma estos detalles antes de firmar en Freighter.",
     "reviewFieldTitle": "Título",
@@ -477,6 +479,7 @@
     "titleLabel": "Título",
     "descriptionLabel": "Descripción",
     "coverImageUrlLabel": "URL de la imagen de portada",
+    "coverImageUrlInvalid": "Introduce una URL de imagen http(s) valida.",
     "saveButton": "Guardar cambios",
     "lastEdited": "Última edición",
     "clearEdits": "Borrar cambios"
@@ -690,5 +693,9 @@
     "positiveAmountWarning": "El límite debe ser una cantidad positiva.",
     "capSetSuccess": "Límite personal establecido en {amount} XLM.",
     "capRemovedSuccess": "Límite personal eliminado."
+  },
+  "Pagination": {
+    "goToPrevious": "Ir a la página anterior",
+    "goToNext": "Ir a la página siguiente"
   }
 }

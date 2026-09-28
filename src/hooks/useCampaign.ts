@@ -4,6 +4,14 @@ import { useState, useEffect, useReducer, useCallback } from "react";
 import { Campaign } from "../types";
 import { getCampaign } from "../lib/contractClient";
 
+/**
+ * Base hook for fetching campaign data.
+ * For specialized access patterns, consider using:
+ * - useCampaignMetadata for title, description, tags, etc.
+ * - useCampaignFunding for funding goal, amount raised, milestones
+ * - useCampaignRules for status, verification, and lifecycle rules
+ */
+
 interface CampaignState {
   campaign: Campaign | null;
   isLoading: boolean;
@@ -69,10 +77,7 @@ export function useCampaign(id: number): UseCampaignResult {
       .then((data) => {
         if (!cancelled) {
           if (data === null) {
-            dispatch({
-              type: "fetch_success",
-              campaign: { id, title: `Unknown Cause #${id}` } as Campaign,
-            });
+            dispatch({ type: "fetch_not_found" });
           } else {
             dispatch({ type: "fetch_success", campaign: data });
           }

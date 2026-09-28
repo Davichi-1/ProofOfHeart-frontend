@@ -1,4 +1,17 @@
-import { Account, Address, BASE_FEE, Contract, Keypair, Memo, Transaction, TransactionBuilder, nativeToScVal, rpc, scValToBigInt, xdr } from "@stellar/stellar-sdk";
+import {
+  Account,
+  Address,
+  BASE_FEE,
+  Contract,
+  Keypair,
+  Memo,
+  Transaction,
+  TransactionBuilder,
+  nativeToScVal,
+  rpc,
+  scValToBigInt,
+  xdr,
+} from "@stellar/stellar-sdk";
 // #649 — Signing goes through the active wallet signer (Freighter or an
 // embedded social wallet) rather than the Freighter API directly.
 import { getSignerAddress, signTransactionXdr } from "./walletSigner";
@@ -45,12 +58,7 @@ const NETWORK_PASSPHRASE =
   process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? "Test SDF Network ; September 2015";
 
 export type TransactionLifecyclePhase =
-  | "building"
-  | "signing"
-  | "submitting"
-  | "confirming"
-  | "confirmed"
-  | "failed";
+  "building" | "signing" | "submitting" | "confirming" | "confirmed" | "failed";
 
 export interface TransactionLifecycleUpdate {
   phase: TransactionLifecyclePhase;
@@ -80,12 +88,89 @@ function getServer(): rpc.Server {
   return _server;
 }
 
+// ---------------------------------------------------------------------------
+// Contract call response cache
+// ---------------------------------------------------------------------------
+
+interface CacheEntry<T> {
+  value: T;
+  timestamp: number;
+}
+
+// Cache storage: method_args -> { value, timestamp }
+const contractCallCache = new Map<string, CacheEntry<unknown>>();
+
+// Default TTL: 30 seconds for view methods
+const DEFAULT_CACHE_TTL_MS = 30_000;
+
+/**
+ * Generates a cache key from method name and arguments.
+ */
+function getCacheKey(method: string, args: xdr.ScVal[]): string {
+  const argsStr = args.map((arg) => arg.toXDR().toString("base64")).join(",");
+  return `${method}:${argsStr}`;
+}
+
+/**
+ * Retrieves a cached value if it exists and is not expired.
+ */
+function getCachedValue<T>(key: string, ttlMs: number = DEFAULT_CACHE_TTL_MS): T | null {
+  const entry = contractCallCache.get(key) as CacheEntry<T> | undefined;
+  if (!entry) return null;
+
+  const age = Date.now() - entry.timestamp;
+  if (age > ttlMs) {
+    contractCallCache.delete(key);
+    return null;
+  }
+
+  return entry.value;
+}
+
+/**
+ * Stores a value in the cache.
+ */
+function setCachedValue<T>(key: string, value: T): void {
+  contractCallCache.set(key, {
+    value,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Clears all cached contract call responses.
+ */
+export function clearContractCache(): void {
+  contractCallCache.clear();
+}
+
+/**
+ * Clears cache entries matching a specific method (e.g., "get_campaign").
+ */
+export function clearContractCacheByMethod(method: string): void {
+  const keysToDelete: string[] = [];
+  for (const key of contractCallCache.keys()) {
+    if (key.startsWith(`${method}:`)) {
+      keysToDelete.push(key);
+    }
+  }
+  keysToDelete.forEach((key) => contractCallCache.delete(key));
+}
+
 /**
  * Discards the cached RPC client so the next call builds a fresh one.
  * Exported for tests and for callers that want to force a reconnect.
  */
 export function resetRpcServer(): void {
   _server = null;
+}
+
+/**
+ * Drops all cached contract call results. Exported for tests and for callers
+ * that need to bypass the response cache (e.g. after a wallet switch).
+ */
+export function clearContractCallCache(): void {
+  contractCallCache.clear();
 }
 
 const CONNECTION_ERROR_PATTERNS = [
@@ -373,6 +458,13 @@ function emitMockLifecycle(txHash: string, options?: TransactionLifecycleOptions
 }
 
 async function invokeViewMethod(method: string, args: xdr.ScVal[] = []): Promise<xdr.ScVal | null> {
+  // Check cache first
+  const cacheKey = getCacheKey(method, args);
+  const cached = getCachedValue<xdr.ScVal | null>(cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+
   const contract = new Contract(CONTRACT_ADDRESS);
 
   const zeroKeyPair = Keypair.random();
@@ -405,7 +497,12 @@ async function invokeViewMethod(method: string, args: xdr.ScVal[] = []): Promise
   }
 
   const successSim = simulated as rpc.Api.SimulateTransactionSuccessResponse;
-  return successSim.result?.retval ?? null;
+  const result = successSim.result?.retval ?? null;
+
+  // Cache the result
+  setCachedValue(cacheKey, result);
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,11 +529,13 @@ function decodeCampaign(val: xdr.ScVal): Campaign {
 
   let rawDescription = fields["description"].str().toString();
   let cover_image_url: string | undefined = undefined;
-  let milestones: any[] | undefined = undefined;
+  let milestones: Milestone[] | undefined = undefined;
   // Contract fields carry no `tags`; fall back to that key only for older/mock
   // records that may have stored it directly, otherwise default to [].
   let tags: string[] = fields["tags"]
-    ? (fields["tags"] as any).vec().map((v: any) => v.str().toString())
+    ? fields["tags"]
+        .vec()
+        .map((v: xdr.ScVal) => v.str().toString())
     : [];
 
   const EXT_MARKER = "\n\n===POH_EXT===\n";
@@ -446,10 +545,12 @@ function decodeCampaign(val: xdr.ScVal): Campaign {
       const extData = JSON.parse(rawDescription.substring(extIndex + EXT_MARKER.length));
       cover_image_url = extData.coverImageUrl;
       if (extData.milestones && Array.isArray(extData.milestones)) {
-        milestones = extData.milestones.map((m: { targetAmount: string | number; description: string }) => ({
-          targetAmount: BigInt(m.targetAmount),
-          description: m.description,
-        }));
+        milestones = extData.milestones.map(
+          (m: { targetAmount: string | number; description: string }) => ({
+            targetAmount: BigInt(m.targetAmount),
+            description: m.description,
+          }),
+        );
       }
       if (extData.tags && Array.isArray(extData.tags)) {
         tags = extData.tags;
@@ -1002,6 +1103,11 @@ export async function createCampaign(
       ...options,
       operation: "create_campaign",
     });
+
+    // Invalidate campaign count and list cache
+    clearContractCacheByMethod("get_campaign_count");
+    clearContractCacheByMethod("get_campaign");
+
     return txResult.txHash;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
@@ -1083,6 +1189,11 @@ export async function contribute(
       action: "contribute",
       txHash: txResult.txHash,
     });
+
+    // Invalidate cache for this campaign and contribution
+    clearContractCacheByMethod("get_campaign");
+    clearContractCacheByMethod("get_contribution");
+
     return txResult.txHash;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
@@ -1116,6 +1227,10 @@ export async function withdrawFunds(
       action: "withdraw",
       txHash: txResult.txHash,
     });
+
+    // Invalidate campaign cache as status changes after withdrawal
+    clearContractCacheByMethod("get_campaign");
+
     return txResult.txHash;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
